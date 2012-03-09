@@ -1,8 +1,3 @@
-$CHIP(6502)
-$TITLE(MON6502.ASM - TARGET MONITOR FOR NOICE WITH 65(c)02 FAMILY)
-$PAGINATE
-$INDENT=8
-$PAGEWIDTH=132
 ;
 ;  6500 series Debug monitor for use with NOICE02
 ;
@@ -17,6 +12,8 @@ $PAGEWIDTH=132
 ;   21-Jul-00 JLH change FN_MIN from F7 to F0
 ;   22-Sep-00 JLH add CALL address to TSTG
 ;   12-Mar-01 JLH V3.0: improve text about paging, formerly called "mapping"
+;   18-Feb-09 PO  Updated a few comments for clarity and stored it in SVN
+;                 Use DASM to assemble file
 ;
 ;============================================================================
 ;
@@ -56,6 +53,7 @@ $PAGEWIDTH=132
 ;  This file has been assembled with the Avocet 6502/740 assembler.
 ;
 ;============================================================================
+               processor 6502
 ;
 ;  I/O equates for Heng's ROM emulator (set true if used)
 ROMEM   EQU     0
@@ -63,35 +61,33 @@ ROMEM   EQU     0
 ;============================================================================
 ;  HARDWARE PLATFORM CUSTOMIZATIONS
 ;
-RAM_START       EQU     0D800H          ;START OF MONITOR RAM
-ROM_START       EQU     0F800H          ;START OF MONITOR CODE
-HARD_VECT       EQU     0FFF0H          ;START OF HARDWARE VECTORS
+RAM_START      EQU     $0200           ;START OF MONITOR RAM
+ROM_START      EQU     $F800           ;START OF MONITOR CODE
+HARD_VECT      EQU     $FFF0           ;START OF HARDWARE VECTORS
 
 ;==========================================================================
-  %IF ROMEM
-
+;
 ;  Equates for 16450 serial port on ROM emulator board
 ;
 ;  The 50747 always reads an address before writing it.  This, of
 ;  course, is hard on pending inputs when writing to an ACIA.
 ;  Since our protocol is half duplex, this shouldn't affect us.
 ;
-S16450  equ     0F800H          ;base of 16450 UART
-RXR     equ     0               ;  Receiver buffer register
-TXR     equ     0               ;  Transmitter buffer register
-IER     equ     1               ;  Interrupt enable register
-LCR     equ     3               ;  Line control register
-MCR     equ     4               ;  Modem control register
-LSR     equ     5               ;  Line status register
+;S16450        equ     $F800           ;base of 16450 UART
+;RXR           equ     0               ;  Receiver buffer register
+;TXR           equ     0               ;  Transmitter buffer register
+;IER           equ     1               ;  Interrupt enable register
+;LCR           equ     3               ;  Line control register
+;MCR           equ     4               ;  Modem control register
+;LSR           equ     5               ;  Line status register
 ;
 ;  Define monitor serial port
-SERIAL_STATUS   EQU     S16450+LSR
-SERIAL_RXDATA   EQU     S16450+RXR
-SERIAL_TXDATA   EQU     S16450+TXR
-RXRDY           EQU     00000001B       ; BIT MASK FOR RX BUFFER FULL
-TXRDY           EQU     00100000B       ; BIT MASK FOR TX BUFFER EMPTY
-
-  %ELSE
+;SERIAL_STATUS EQU     S16450+LSR
+;SERIAL_RXDATA EQU     S16450+RXR
+;SERIAL_TXDATA EQU     S16450+TXR
+;RXRDY         EQU     00000001B       ; BIT MASK FOR RX BUFFER FULL
+;TXRDY         EQU     00100000B       ; BIT MASK FOR TX BUFFER EMPTY
+;
 ;  Use ACIA (6551) for RS-232
 ;  The 50747 always reads an address before writing it.  This, of
 ;  course, is hard on pending inputs when writing to an ACIA.  Mr.
@@ -105,28 +101,29 @@ TXRDY           EQU     00100000B       ; BIT MASK FOR TX BUFFER EMPTY
 ;
 ;  The hardware connects RS-232 pin 20 (DTR) to 6551 RST.  This because
 ;  the Hayes modem and direct connect cables use DTR for signaling.
-SERIAL_TXDATA   EQU     3000H           ;ACIA WRITE DATA
-SERIAL_RXDATA   EQU     3004H           ;ACIA READ DATA
-SERIAL_RESET    EQU     3001H           ;WRITE (STATUS) TO RESET ACIA
-SERIAL_STATUS   EQU     3005H           ;ACIA STATUS
-SERIAL_WCMD     EQU     3002H           ;ACIA COMMAND REGISTER
-SERIAL_WCTL     EQU     3003H           ;ACIA CONTROL REGISTER
-RXRDY   EQU     08H                     ;RECEIVE READY
-TXRDY   EQU     10H                     ;TRANSMIT READY
-
-  %ENDIF
+SERIAL_TXDATA  EQU   $7C00             ;ACIA WRITE DATA
+SERIAL_RXDATA  EQU   $7C00             ;ACIA READ DATA
+SERIAL_RESET   EQU   $7C01             ;WRITE (STATUS) TO RESET ACIA
+SERIAL_STATUS  EQU   $7C01             ;ACIA STATUS
+SERIAL_WCMD    EQU   $7C02             ;ACIA COMMAND REGISTER
+SERIAL_WCTL    EQU   $7C03             ;ACIA CONTROL REGISTER
+RXRDY          EQU   $08               ;RECEIVE READY
+TXRDY          EQU   $10               ;TRANSMIT READY
+;
 
 ;============================================================================
 ;  STACK RAM (PAGE 1)
 ;  (Calculated use is at most 7 bytes)
-INITSTACK  EQU  13FH            ;TOP OF STACK RAM
+INITSTACK      EQU   $13F              ;TOP OF STACK RAM
 ;
 ;  RAM definitions
-        DEFSEG  BIGRAM, CLASS=DATA
-        SEG     BIGRAM
+               seg.u RAM
+               org   $0200
 ;
 ;  RAM interrupt vectors (first in SEG for easy addressing, else move to
 ;  their own SEG)
+;  (RAMVEC + $00)  - NMI Handler
+;  (RAMVEC + $04)  - IRQ Handler
 RAMVEC          DS      2*3
 ;
 ;  Target registers:  order must match that in TRG740.C
@@ -139,7 +136,7 @@ REG_X           DS      1
 REG_A           DS      1
 REG_CC          DS      1
 REG_PC          DS      2
-TASK_REGS_SIZE  EQU     $-TASK_REGS
+TASK_REGS_SIZE =     *-TASK_REGS
 ;
 ;  In order that we need no page zero RAM, do memory access via an
 ;  instruction built into RAM.  Build instruction and RTS here
@@ -154,10 +151,13 @@ RXTIMER         DS      2
 COMBUF_SIZE     EQU     128             ;DATA SIZE FOR COMM BUFFER
 COMBUF          DS      2+COMBUF_SIZE+1 ;BUFFER ALSO HAS FN, LEN, AND CHECK
 ;
-RAM_END         EQU     $               ;ADDRESS OF TOP+1 OF RAM
+RAM_END        EQU   *                 ;ADDRESS OF TOP+1 OF RAM
 ;
 ;===========================================================================
         SEG     CODE
+               org   $8000,$ff
+               DC    $ff
+               org   $fc00
 ;
 ;  Power on reset
 RESET:
@@ -170,16 +170,16 @@ RESET:
 ;  INITIALIZE TARGET HARDWARE
 ;
 ;  INIT STACK
-        LDX     #LOW INITSTACK
+               LDX     #>INITSTACK
         TXS
 ;
 ;===========================================================================
-  %IF ROMEM
+#IF ROMEM
 ;
 ;  Initialize S16450 UART on ROM emulator
 ;
 ;  access baud generator, no parity, 1 stop bit, 8 data bits
-        LDA     #10000011B
+               LDA    #%10000011
         STA     S16450+LCR
 ;
 ;  fixed baud rate of 19200:  crystal is 3.686400 Mhz.
@@ -190,44 +190,46 @@ RESET:
         STA     S16450+RXR+1            ;msb=0
 ;
 ;  access data registers, no parity, 1 stop bits, 8 data bits
-        LDA     #00000011B
+               LDA     #%00000011
         STA     S16450+LCR
 ;
 ;  no loopback, OUT2 on, OUT1 on, RTS on, DTR (LED) on
-        LDA     #00001111B
+               LDA     #%00001111
         STA     S16450+MCR
 ;
 ;  disable all interrupts: modem, receive error, transmit, and receive
-        LDA     #00000000B
+               LDA     #%00000000
         STA     S16450+IER
-  %ELSE
+#ELSE
 
 ;  INIT MONITOR ACIA: 9600 BAUD, 8 BITS, NO PARITY, 1 STOP BIT
 ;  ACIA RUNS FROM 3.6864 MHZ CRYSTAL DIVIDED BY 4.
 ;  BAUD RATES ARE THUS HALF OF THOSE LISTED IN 6551 DATA SHEETS
         LDA     #0
         STA     SERIAL_RESET    ;PROGRAMMED RESET
-        LDA     #00011111B      ;1SB, 8 DATA, 9600 BAUD (BOOK'S 19200)
+               LDA     #%00011111      ;1SB, 8 DATA, 9600 BAUD (BOOK'S 19200)
         STA     SERIAL_WCTL
-        LDA     #00001011B      ;NO PARITY, RTS, NO TX OR RX INT
+               LDA     #%00001011      ;NO PARITY, RTS, NO TX OR RX INT
         STA     SERIAL_WCMD
-  %ENDIF
+               LDA   SERIAL_STATUS     ; this is just to remove any pending
+                                       ; interrupt that might exist.
+#ENDIF
 ;===========================================================================
 ;  INIT RAM INTERRUPT VECTORS TO DUMMY HANDLERS
-        LDA     #LOW .NMIX      ;NMI
+               LDA     #<.NMIX      ;NMI
         STA     RAMVEC+0
-        LDA     #HIGH .NMIX
+               LDA     #>.NMIX
         STA     RAMVEC+0+1
 ;
-        LDA     #LOW .IRQX      ;IRQ
-        STA     RAMVEC+04H
-        LDA     #HIGH .IRQX
-        STA     RAMVEC+04H+1
+               LDA     #<.IRQX      ;IRQ
+               STA     RAMVEC+04
+               LDA     #>.IRQX
+               STA     RAMVEC+04+1
 ;
 ;  Initialize user registers
-        LDX     #LOW INITSTACK
+               LDX     #<INITSTACK
         STX     REG_SP                  ;INIT USER'S STACK POINTER
-        LDX     #HIGH INITSTACK
+               LDX     #>INITSTACK
         STX     REG_SP+1
         LDA     #0
         STA     REG_PC
@@ -307,47 +309,47 @@ REWDT:
 ;======================================================================
 ;  Response string for GET TARGET STATUS request
 ;  Reply describes target:
-TSTG:   DB      7                       ;2: PROCESSOR TYPE = 65(C)02
-        DB      COMBUF_SIZE             ;3: SIZE OF COMMUNICATIONS BUFFER
-        DB      080H                    ;4: has CALL
-        DW      0,0                     ;5-8: LOW AND HIGH LIMIT OF MAPPED MEM (NONE)
-        DB      B1-B0                   ;9 BREAKPOINT INSTR LENGTH
+TSTG:          DC    7                 ;2: PROCESSOR TYPE = 65(C)02
+               DC    COMBUF_SIZE       ;3: SIZE OF COMMUNICATIONS BUFFER
+               DC    $80               ;4: has CALL
+               DC.W  0,0               ;5-8: LOW AND HIGH LIMIT OF MAPPED MEM (NONE)
+               DC    B1-B0             ;9 BREAKPOINT INSTR LENGTH
 ;
 ;  Define either the BRK or JSR BRKE instruction for use as breakpoint
 B0:     BRK                             ;10+ BREKAPOINT INSTRUCTION
 ;;;B0:  JSR     BRKE                    ;10+ BREKAPOINT INSTRUCTION
-B1:     DB      '6500 monitor V3.0',0   ;DESCRIPTION, ZERO
-        DB     0                       ;page of CALL breakpoint
-        DW     B0                      ;address of CALL breakpoint in native order
+B1:            DC    "6500 monitor V3.0",0  ;DESCRIPTION, ZERO
+               DC    0                 ;page of CALL breakpoint
+               DC.W  B0                ;address of CALL breakpoint in native order
 
-TSTG_SIZE       EQU     $-TSTG          ;SIZE OF STRING
+TSTG_SIZE      EQU   *-TSTG            ;SIZE OF STRING
 ;
 ;======================================================================
 ;  HARDWARE PLATFORM INDEPENDENT EQUATES AND CODE
 ;
 ;  Communications function codes.
-FN_GET_STATUS   EQU     0FFH    ;reply with device info
-FN_READ_MEM     EQU     0FEH    ;reply with data
-FN_WRITE_MEM    EQU     0FDH    ;reply with status (+/-)
-FN_READ_REGS    EQU     0FCH    ;reply with registers
-FN_WRITE_REGS   EQU     0FBH    ;reply with status
-FN_RUN_TARGET   EQU     0FAH    ;reply (delayed) with registers
-FN_SET_BYTES    EQU     0F9H    ;reply with data (truncate if error)
-FN_IN           EQU     0F8H    ;input from port
-FN_OUT          EQU     0F7H    ;output to port
+FN_GET_STATUS  EQU   $FF               ;reply with device info
+FN_READ_MEM    EQU   $FE               ;reply with data
+FN_WRITE_MEM   EQU   $FD               ;reply with status (+/-)
+FN_READ_REGS   EQU   $FC               ;reply with registers
+FN_WRITE_REGS  EQU   $FB               ;reply with status
+FN_RUN_TARGET  EQU   $FA               ;reply (delayed) with registers
+FN_SET_BYTES   EQU   $F9               ;reply with data (truncate if error)
+FN_IN          EQU   $F8               ;input from port
+FN_OUT         EQU   $F7               ;output to port
 ;
-FN_MIN          EQU     0F0H    ;MINIMUM RECOGNIZED FUNCTION CODE
-FN_ERROR        EQU     0F0H    ;error reply to unknown op-code
+FN_MIN         EQU   $F0               ;MINIMUM RECOGNIZED FUNCTION CODE
+FN_ERROR       EQU   $F0               ;error reply to unknown op-code
 ;
 ;  6502 OP-CODE EQUATES
-B               EQU     10H     ;BREAK BIT IN CONDITION CODES
-LDA_OP          EQU     0ADH    ;LDA AAA
-STA_OP          EQU     08DH    ;STA AAA
-CMP_OP          EQU     0CDH    ;CMP AAA
-LDAY_OP         EQU     0B9H    ;LDA AAA,Y
-STAY_OP         EQU     099H    ;STA AAA,Y
-CMPY_OP         EQU     0D9H    ;CMP AAA,Y
-RTS_OP          EQU     060H    ;RTS
+B              EQU   $10               ;BREAK BIT IN CONDITION CODES
+LDA_OP         EQU   $AD               ;LDA AAA
+STA_OP         EQU   $8D               ;STA AAA
+CMP_OP         EQU   $CD               ;CMP AAA
+LDAY_OP        EQU   $B9               ;LDA AAA,Y
+STAY_OP        EQU   $99               ;STA AAA,Y
+CMPY_OP        EQU   $D9               ;CMP AAA,Y
+RTS_OP         EQU   $60               ;RTS
 
 ;===========================================================================
 ;  Enter here via JSR for breakpoint:  PC is stacked.
@@ -472,7 +474,7 @@ MAI80:  JSR     GETCHAR                 ;GET THE CHECKSUM
         LDA     #FN_ERROR
         STA     COMBUF          ;SET FUNCTION AS "ERROR"
         LDA     #1
-        JMP     SEND_STATUS     ;VALUE IS "ERROR"
+               JMP     SENDSTATUS     ;VALUE IS "ERROR"
 ;
 ;  long jumps to handlers
 JREAD_MEM:      JMP     READ_MEM
@@ -489,7 +491,7 @@ JOUT_PORT:      JMP     OUT_PORT
 ;  Target Status:  FN, len
 TARGET_STATUS:
         LDX     #0                      ;DATA FOR REPLY
-        LDY     #TSTG_SIZE              ;LENGTH OF REPLY
+               LDY     #<TSTG_SIZE              ;LENGTH OF REPLY
         STY     COMBUF+1                ;SET SIZE IN REPLY BUFFER
 TS10:   LDA     TSTG,X                  ;MOVE REPLY DATA TO BUFFER
         STA     COMBUF+2,X
@@ -608,7 +610,7 @@ WLP50:  LDA     #0                      ;RETURN STATUS = 0
 WLP80:  LDA     #1
 ;
 ;  Return OK status
-WLP90:  JMP     SEND_STATUS
+WLP90:         JMP     SENDSTATUS
 
 ;===========================================================================
 ;
@@ -619,7 +621,7 @@ READ_REGS:
 ;  Enter here from "RUN" and "STEP" to return task registers
 RETURN_REGS:
         LDX     #0                      ;REGISTER LIVE HERE
-        LDY     #TASK_REGS_SIZE         ;NUMBER OF BYTES
+               LDY     #<TASK_REGS_SIZE         ;NUMBER OF BYTES
         STY     COMBUF+1                ;SAVE RETURN DATA LENGTH
 ;
 ;  Copy the registers
@@ -655,7 +657,7 @@ WRRLP:  LDA     COMBUF+2,X              ;GET BYTE TO A
 ;
 ;  Return OK status
 WRR80:  LDA     #0
-        JMP     SEND_STATUS
+               JMP     SENDSTATUS
 
 ;===========================================================================
 ;
@@ -812,7 +814,7 @@ IN_PORT:
         JSR     CODEBUF                 ;GET BYTE TO A
 ;
 ;  Return byte read as "status"
-        JMP     SEND_STATUS
+               JMP     SENDSTATUS
 
 ;===========================================================================
 ;
@@ -844,13 +846,13 @@ OUT_PORT:
 ;
 ;  Return status of OK
         LDA     #0
-        JMP     SEND_STATUS
+               JMP     SENDSTATUS
 
 ;===========================================================================
 ;  Build status return with value from "A"
 ;
-SEND_STATUS:
-        STA     COMBUF+2                ;SET STATUS
+
+SENDSTATUS:    STA     COMBUF+2                ;SET STATUS
         LDA     #1
         STA     COMBUF+1                ;SET LENGTH
         JMP     SEND
@@ -859,7 +861,7 @@ SEND_STATUS:
 ;  Append checksum to COMBUF and send to master
 ;
 SEND:   JSR     CHECKSUM                ;GET A=CHECKSUM, X->checksum location
-        EOR     #0FFH
+               EOR     #$FF
         CLC
         ADC     #1
         STA     COMBUF,X                ;STORE NEGATIVE OF CHECKSUM
@@ -944,7 +946,7 @@ CHK10:  CLC
         AND     #B
         BNE     GOBREAKP        ;SET: DO BREAKPOINT CODE
         LDA     REG_A           ;ELSE RESTORE ACC.
-        JMP     (RAMVEC+04H)    ;JUMP THROUGH RAM VECTOR
+               JMP     (RAMVEC+04)     ;JUMP THROUGH RAM VECTOR
 ;
 ;  IRQ NOT USED (ADDRESS PLACED IN RAMVEC+04H BY INIT)
 .IRQX:  LDA     #2              ;TARGET STOP TYPE
@@ -982,10 +984,10 @@ GOBREAK:
 ;
 ;
 ;  INTERRUPT VECTORS
-        DEFSEG  VECTORS, CLASS=DATA
         SEG     VECTORS
-        DW      .NMI            ;FFFA NMI
-        DW      RESET           ;FFFC RESET
-        DW      .IRQ            ;FFFE IRQ, BRK
+               org   $fffa
+               DC.W  .NMI            ;FFFA NMI
+               DC.W  RESET           ;FFFC RESET
+               DC.W  .IRQ            ;FFFE IRQ, BRK
 ;
         END     RESET
